@@ -3,6 +3,7 @@
 This repository contains the server-side implementation for a simulated event ticket purchasing system, developed as part of the Programming Languages course at the Instituto Tecnológico de Costa Rica (ITCR) during the second semester of 2024. The project is implemented using Rust, focusing on high performance, concurrency, and secure coding practices.
 
 ### Project Details:
+
 - Course: Programming Languages (2024)
 - Institution: Instituto Tecnológico de Costa Rica (ITCR)
 - Duration: 15 days
