@@ -147,20 +147,50 @@ fn send_pet_names(requester: &str, clients: &ClientMap, pet_names: &Arc<Mutex<Ve
 
 fn send_stadium_structure(requester: &str, clients: &ClientMap, estadio: &Arc<Estadio>) {
     let estadio = &**estadio;
-
     let mut stadium_structure = String::new();
 
     for categoria in &estadio.categorias {
         stadium_structure.push_str(&format!("Categoría: {}\n", categoria.nombre));
         for zona in &categoria.zonas {
             stadium_structure.push_str(&format!("  Zona: {}\n", zona.nombre));
-            stadium_structure.push_str("  Asientos:\n");
+            
+            let mut available_seats = String::new();
+            let mut reserved_and_purchased_seats = String::new();
 
             for (fila_idx, fila) in zona.asientos.iter().enumerate() {
-                let fila_str: Vec<String> = fila.iter().enumerate().map(|(col_idx, asiento)| {
-                    format!("[{}, {}: {:?}]", fila_idx + 1, col_idx + 1, asiento.estado)
+                let available_row: Vec<String> = fila.iter().enumerate().filter_map(|(col_idx, asiento)| {
+                    if asiento.estado == SeatState::Libre {
+                        Some(format!("[Fila {}, Asiento {}: Libre]", fila_idx + 1, col_idx + 1))
+                    } else {
+                        None
+                    }
                 }).collect();
-                stadium_structure.push_str(&format!("    {}\n", fila_str.join(" | ")));
+                
+                let reserved_and_purchased_row: Vec<String> = fila.iter().enumerate().filter_map(|(col_idx, asiento)| {
+                    match asiento.estado {
+                        SeatState::Reservado => Some(format!("[Fila {}, Asiento {}: Reservado]", fila_idx + 1, col_idx + 1)),
+                        SeatState::Comprado => Some(format!("[Fila {}, Asiento {}: Comprado]", fila_idx + 1, col_idx + 1)),
+                        _ => None,
+                    }
+                }).collect();
+
+                if !available_row.is_empty() {
+                    available_seats.push_str(&format!("    {}\n", available_row.join(" | ")));
+                }
+                
+                if !reserved_and_purchased_row.is_empty() {
+                    reserved_and_purchased_seats.push_str(&format!("    {}\n", reserved_and_purchased_row.join(" | ")));
+                }
+            }
+
+            if !available_seats.is_empty() {
+                stadium_structure.push_str("  Asientos Disponibles:\n");
+                stadium_structure.push_str(&available_seats);
+            }
+
+            if !reserved_and_purchased_seats.is_empty() {
+                stadium_structure.push_str("  Asientos Reservados y Comprados:\n");
+                stadium_structure.push_str(&reserved_and_purchased_seats);
             }
 
             stadium_structure.push_str("\n");
@@ -173,6 +203,8 @@ fn send_stadium_structure(requester: &str, clients: &ClientMap, estadio: &Arc<Es
         }
     }
 }
+
+
 
 
 fn broadcast_message(message: &str, clients: &ClientMap) {
@@ -211,7 +243,6 @@ fn main() {
         }
     }
 }
-
 
 
 
