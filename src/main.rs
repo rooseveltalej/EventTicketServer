@@ -1,5 +1,5 @@
 use serde::{Serialize, Deserialize};
-use serde_json;
+//use serde_json;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
@@ -146,9 +146,26 @@ fn send_pet_names(requester: &str, clients: &ClientMap, pet_names: &Arc<Mutex<Ve
 }
 
 fn send_stadium_structure(requester: &str, clients: &ClientMap, estadio: &Arc<Estadio>) {
-    // Desreferencia el Arc para obtener una referencia a Estadio
     let estadio = &**estadio;
-    let stadium_structure = serde_json::to_string(estadio).unwrap();  // Serializa usando la referencia
+
+    let mut stadium_structure = String::new();
+
+    for categoria in &estadio.categorias {
+        stadium_structure.push_str(&format!("Categoría: {}\n", categoria.nombre));
+        for zona in &categoria.zonas {
+            stadium_structure.push_str(&format!("  Zona: {}\n", zona.nombre));
+            stadium_structure.push_str("  Asientos:\n");
+
+            for (fila_idx, fila) in zona.asientos.iter().enumerate() {
+                let fila_str: Vec<String> = fila.iter().enumerate().map(|(col_idx, asiento)| {
+                    format!("[{}, {}: {:?}]", fila_idx + 1, col_idx + 1, asiento.estado)
+                }).collect();
+                stadium_structure.push_str(&format!("    {}\n", fila_str.join(" | ")));
+            }
+
+            stadium_structure.push_str("\n");
+        }
+    }
 
     if let Some(mut client) = clients.lock().unwrap().get(requester) {
         if let Err(e) = client.write_all(stadium_structure.as_bytes()) {
@@ -156,7 +173,6 @@ fn send_stadium_structure(requester: &str, clients: &ClientMap, estadio: &Arc<Es
         }
     }
 }
-
 
 
 fn broadcast_message(message: &str, clients: &ClientMap) {
