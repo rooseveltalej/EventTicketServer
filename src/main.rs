@@ -1,5 +1,4 @@
 use serde::{Serialize, Deserialize};
-//use serde_json;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
@@ -98,9 +97,16 @@ impl Estadio {
 
 type ClientMap = Arc<Mutex<HashMap<String, TcpStream>>>;
 
-fn handle_client(stream: TcpStream, clients: ClientMap, pet_names: Arc<Mutex<Vec<String>>>, estadio: Arc<Estadio>) {
+fn handle_client(mut stream: TcpStream, clients: ClientMap, estadio: Arc<Estadio>) {
     let address = stream.peer_addr().unwrap().to_string();
     println!("New client connected: {}", address);
+
+    // Enviar el mensaje de bienvenida
+    if let Err(e) = stream.write_all(b"Bienvenido al evento de Metallica\n").and_then(|_| stream.flush()) {
+        eprintln!("Error sending welcome message to {}: {}", address, e);
+        return;
+    }
+
     clients.lock().unwrap().insert(address.clone(), stream.try_clone().unwrap());
 
     let mut reader = BufReader::new(stream);
@@ -111,9 +117,7 @@ fn handle_client(stream: TcpStream, clients: ClientMap, pet_names: Arc<Mutex<Vec
         match reader.read_line(&mut buffer) {
             Ok(bytes_read) if bytes_read > 0 => {
                 let trimmed_message = buffer.trim();
-                if trimmed_message == "GET_PET_NAMES" {
-                    send_pet_names(&address, &clients, &pet_names);
-                } else if trimmed_message == "GET_STADIUM_STRUCTURE" {
+                if trimmed_message == "GET_STADIUM_STRUCTURE" {
                     send_stadium_structure(&address, &clients, &estadio);
                 } else {
                     let message = format!("{}: {}", address, buffer);
@@ -130,17 +134,6 @@ fn handle_client(stream: TcpStream, clients: ClientMap, pet_names: Arc<Mutex<Vec
                 eprintln!("Error reading from client {}: {}", address, e);
                 break;
             }
-        }
-    }
-}
-
-fn send_pet_names(requester: &str, clients: &ClientMap, pet_names: &Arc<Mutex<Vec<String>>>) {
-    let pet_names = pet_names.lock().unwrap();
-    let names_message = format!("Pet names: {}\n", pet_names.join(", "));
-    
-    if let Some(mut client) = clients.lock().unwrap().get(requester) {
-        if let Err(e) = client.write_all(names_message.as_bytes()) {
-            eprintln!("Error sending pet names to {}: {}", requester, e);
         }
     }
 }
@@ -174,7 +167,6 @@ fn send_stadium_structure(requester: &str, clients: &ClientMap, estadio: &Arc<Es
     }
 }
 
-
 fn broadcast_message(message: &str, clients: &ClientMap) {
     let clients = clients.lock().unwrap();
     for (_address, mut client) in clients.iter() {
@@ -189,21 +181,14 @@ fn main() {
     println!("Server running on 127.0.0.1:8080");
 
     let clients: ClientMap = Arc::new(Mutex::new(HashMap::new()));
-    let pet_names: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![
-        "Fido".to_string(), 
-        "Whiskers".to_string(), 
-        "Buddy".to_string()
-    ]));
-
     let estadio = Arc::new(Estadio::new());
 
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
                 let clients = Arc::clone(&clients);
-                let pet_names = Arc::clone(&pet_names);
                 let estadio = Arc::clone(&estadio);
-                thread::spawn(move || handle_client(stream, clients, pet_names, estadio));
+                thread::spawn(move || handle_client(stream, clients, estadio));
             }
             Err(e) => {
                 eprintln!("Failed to accept client: {}", e);
@@ -211,7 +196,3 @@ fn main() {
         }
     }
 }
-
-
-
-
