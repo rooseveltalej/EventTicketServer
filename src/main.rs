@@ -1,5 +1,6 @@
+extern crate regex;
+use regex::Regex;
 use serde::{Serialize, Deserialize};
-//use serde_json;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
@@ -98,12 +99,18 @@ impl Estadio {
 
 type ClientMap = Arc<Mutex<HashMap<String, TcpStream>>>;
 
-fn handle_client(stream: TcpStream, clients: ClientMap, pet_names: Arc<Mutex<Vec<String>>>, estadio: Arc<Estadio>) {
+fn handle_client(mut stream: TcpStream, clients: ClientMap, estadio: Arc<Mutex<Estadio>>) {
     let address = stream.peer_addr().unwrap().to_string();
     println!("New client connected: {}", address);
+
+    if let Err(e) = stream.write_all(b"Bienvenido al evento de Metallica\n").and_then(|_| stream.flush()) {
+        eprintln!("Error sending welcome message to {}: {}", address, e);
+        return;
+    }
+
     clients.lock().unwrap().insert(address.clone(), stream.try_clone().unwrap());
 
-    let mut reader = BufReader::new(stream);
+    let mut reader = BufReader::new(&mut stream);
     let mut buffer = String::new();
 
     loop {
@@ -111,10 +118,13 @@ fn handle_client(stream: TcpStream, clients: ClientMap, pet_names: Arc<Mutex<Vec
         match reader.read_line(&mut buffer) {
             Ok(bytes_read) if bytes_read > 0 => {
                 let trimmed_message = buffer.trim();
-                if trimmed_message == "GET_PET_NAMES" {
-                    send_pet_names(&address, &clients, &pet_names);
-                } else if trimmed_message == "GET_STADIUM_STRUCTURE" {
+                println!("Received message from {}: {}", address, trimmed_message);  // Agregado para depuración
+                if trimmed_message == "GET_STADIUM_STRUCTURE" {
                     send_stadium_structure(&address, &clients, &estadio);
+                } else if trimmed_message.starts_with("RESERVAR_ASIENTO") {
+                    process_seat_request(trimmed_message, &address, &clients, &estadio, SeatState::Reservado);
+                } else if trimmed_message.starts_with("COMPRAR_ASIENTO") {
+                    process_seat_request(trimmed_message, &address, &clients, &estadio, SeatState::Comprado);
                 } else {
                     let message = format!("{}: {}", address, buffer);
                     println!("Message received: {}", message);
@@ -134,19 +144,69 @@ fn handle_client(stream: TcpStream, clients: ClientMap, pet_names: Arc<Mutex<Vec
     }
 }
 
-fn send_pet_names(requester: &str, clients: &ClientMap, pet_names: &Arc<Mutex<Vec<String>>>) {
-    let pet_names = pet_names.lock().unwrap();
-    let names_message = format!("Pet names: {}\n", pet_names.join(", "));
-    
-    if let Some(mut client) = clients.lock().unwrap().get(requester) {
-        if let Err(e) = client.write_all(names_message.as_bytes()) {
-            eprintln!("Error sending pet names to {}: {}", requester, e);
+
+
+
+
+
+fn process_seat_request(request: &str, requester: &str, clients: &ClientMap, estadio: &Arc<Mutex<Estadio>>, new_state: SeatState) {
+    let re = Regex::new(r#"RESERVAR_ASIENTO\s+"([^"]+)"\s+"([^"]+)"\s+(\d+)\s+(\d+)"#).unwrap();
+    if let Some(caps) = re.captures(request) {
+        // Elimina las comillas alrededor de los valores de categoría y zona
+        let categoria = caps[1].trim_matches('"');
+        let zona = caps[2].trim_matches('"');
+        let fila: usize = caps[3].parse().unwrap_or(0);
+        let asiento: usize = caps[4].parse().unwrap_or(0);
+
+        println!("Procesando solicitud: Categoría={}, Zona={}, Fila={}, Asiento={}", categoria, zona, fila, asiento);
+
+        let mut estadio = estadio.lock().expect("Failed to lock estadio mutex");
+
+        let mut seat_found = false;
+
+        for cat in estadio.categorias.iter_mut() {
+            if cat.nombre == categoria {
+                for zon in cat.zonas.iter_mut() {
+                    if zon.nombre == zona {
+                        if fila > 0 && fila <= zon.asientos.len() && asiento > 0 && asiento <= zon.asientos[0].len() {
+                            let current_seat = &mut zon.asientos[fila - 1][asiento - 1];
+                            if current_seat.estado == SeatState::Libre {
+                                current_seat.estado = new_state;
+                                seat_found = true;
+                                send_message_to_client(requester, clients, "Operación exitosa.\n");
+                            } else {
+                                send_message_to_client(requester, clients, "El asiento no está disponible.\n");
+                            }
+                        } else {
+                            send_message_to_client(requester, clients, "Fila o asiento fuera de rango.\n");
+                        }
+                    }
+                }
+            }
+        }
+
+        if !seat_found {
+            send_message_to_client(requester, clients, "Asiento no encontrado o no disponible.\n");
+        }
+    } else {
+        send_message_to_client(requester, clients, "Formato de comando incorrecto.\n");
+    }
+}
+
+
+
+fn send_message_to_client(client_address: &str, clients: &ClientMap, message: &str) {
+    if let Some(mut client) = clients.lock().unwrap().get(client_address) {
+        if let Err(e) = client.write_all(message.as_bytes()) {
+            eprintln!("Error sending message to {}: {}", client_address, e);
         }
     }
 }
 
-fn send_stadium_structure(requester: &str, clients: &ClientMap, estadio: &Arc<Estadio>) {
-    let estadio = &**estadio;
+
+fn send_stadium_structure(requester: &str, clients: &ClientMap, estadio: &Arc<Mutex<Estadio>>) {
+    // Bloquear el mutex para obtener acceso a los datos
+    let estadio = estadio.lock().unwrap();
 
     let mut stadium_structure = String::new();
 
@@ -189,21 +249,14 @@ fn main() {
     println!("Server running on 127.0.0.1:8080");
 
     let clients: ClientMap = Arc::new(Mutex::new(HashMap::new()));
-    let pet_names: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![
-        "Fido".to_string(), 
-        "Whiskers".to_string(), 
-        "Buddy".to_string()
-    ]));
-
-    let estadio = Arc::new(Estadio::new());
+    let estadio = Arc::new(Mutex::new(Estadio::new()));  // Envolver estadio en un Mutex
 
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
                 let clients = Arc::clone(&clients);
-                let pet_names = Arc::clone(&pet_names);
-                let estadio = Arc::clone(&estadio);
-                thread::spawn(move || handle_client(stream, clients, pet_names, estadio));
+                let estadio = Arc::clone(&estadio);  // Clonar el Arc<Mutex<Estadio>>
+                thread::spawn(move || handle_client(stream, clients, estadio));
             }
             Err(e) => {
                 eprintln!("Failed to accept client: {}", e);
@@ -211,7 +264,3 @@ fn main() {
         }
     }
 }
-
-
-
-
