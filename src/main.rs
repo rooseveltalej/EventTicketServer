@@ -234,7 +234,6 @@ fn send_stadium_structure(requester: &str, clients: &ClientMap, estadio: &Arc<Mu
     }
 }
 
-
 fn broadcast_message(message: &str, clients: &ClientMap) {
     let clients = clients.lock().unwrap();
     for (_address, mut client) in clients.iter() {
