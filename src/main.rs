@@ -147,18 +147,18 @@ fn handle_client(mut stream: TcpStream, clients: ClientMap, estadio: Arc<Mutex<E
 
 
 
-
-
 fn process_seat_request(request: &str, requester: &str, clients: &ClientMap, estadio: &Arc<Mutex<Estadio>>, new_state: SeatState) {
     let re = Regex::new(r#"RESERVAR_ASIENTO\s+"([^"]+)"\s+"([^"]+)"\s+(\d+)\s+(\d+)"#).unwrap();
+    let re_compra = Regex::new(r#"COMPRAR_ASIENTO\s+"([^"]+)"\s+"([^"]+)"\s+(\d+)\s+(\d+)"#).unwrap();
+
     if let Some(caps) = re.captures(request) {
-        // Elimina las comillas alrededor de los valores de categoría y zona
+        // Procesar reserva de asiento
         let categoria = caps[1].trim_matches('"');
         let zona = caps[2].trim_matches('"');
         let fila: usize = caps[3].parse().unwrap_or(0);
         let asiento: usize = caps[4].parse().unwrap_or(0);
 
-        println!("Procesando solicitud: Categoría={}, Zona={}, Fila={}, Asiento={}", categoria, zona, fila, asiento);
+        println!("Procesando reserva: Categoría={}, Zona={}, Fila={}, Asiento={}", categoria, zona, fila, asiento);
 
         let mut estadio = estadio.lock().expect("Failed to lock estadio mutex");
 
@@ -188,10 +188,48 @@ fn process_seat_request(request: &str, requester: &str, clients: &ClientMap, est
         if !seat_found {
             send_message_to_client(requester, clients, "Asiento no encontrado o no disponible.\n");
         }
+    } else if let Some(caps) = re_compra.captures(request) {
+        // Procesar compra de asiento
+        let categoria = caps[1].trim_matches('"');
+        let zona = caps[2].trim_matches('"');
+        let fila: usize = caps[3].parse().unwrap_or(0);
+        let asiento: usize = caps[4].parse().unwrap_or(0);
+
+        println!("Procesando compra: Categoría={}, Zona={}, Fila={}, Asiento={}", categoria, zona, fila, asiento);
+
+        let mut estadio = estadio.lock().expect("Failed to lock estadio mutex");
+
+        let mut seat_found = false;
+
+        for cat in estadio.categorias.iter_mut() {
+            if cat.nombre == categoria {
+                for zon in cat.zonas.iter_mut() {
+                    if zon.nombre == zona {
+                        if fila > 0 && fila <= zon.asientos.len() && asiento > 0 && asiento <= zon.asientos[0].len() {
+                            let current_seat = &mut zon.asientos[fila - 1][asiento - 1];
+                            if current_seat.estado == SeatState::Reservado {
+                                current_seat.estado = new_state;
+                                seat_found = true;
+                                send_message_to_client(requester, clients, "Operación exitosa.\n");
+                            } else {
+                                send_message_to_client(requester, clients, "El asiento no está disponible para compra.\n");
+                            }
+                        } else {
+                            send_message_to_client(requester, clients, "Fila o asiento fuera de rango.\n");
+                        }
+                    }
+                }
+            }
+        }
+
+        if !seat_found {
+            send_message_to_client(requester, clients, "Asiento no encontrado o no disponible.\n");
+        }
     } else {
         send_message_to_client(requester, clients, "Formato de comando incorrecto.\n");
     }
 }
+
 
 
 
