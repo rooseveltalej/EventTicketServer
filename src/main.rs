@@ -11,6 +11,7 @@ use std::thread;
 enum SeatState {
     Libre,
     Reservado,
+    ReservadoPorUsuario,
     Comprado,
 }
 
@@ -171,7 +172,7 @@ fn process_seat_request(request: &str, requester: &str, clients: &ClientMap, est
                         if fila > 0 && fila <= zon.asientos.len() && asiento > 0 && asiento <= zon.asientos[0].len() {
                             let current_seat = &mut zon.asientos[fila - 1][asiento - 1];
                             if current_seat.estado == SeatState::Libre {
-                                current_seat.estado = new_state;
+                                current_seat.estado = SeatState::ReservadoPorUsuario;
                                 seat_found = true;
                                 send_message_to_client(requester, clients, "Operación exitosa.\n");
                             } else {
@@ -207,8 +208,8 @@ fn process_seat_request(request: &str, requester: &str, clients: &ClientMap, est
                     if zon.nombre == zona {
                         if fila > 0 && fila <= zon.asientos.len() && asiento > 0 && asiento <= zon.asientos[0].len() {
                             let current_seat = &mut zon.asientos[fila - 1][asiento - 1];
-                            if current_seat.estado == SeatState::Reservado {
-                                current_seat.estado = new_state;
+                            if current_seat.estado == SeatState::ReservadoPorUsuario {
+                                current_seat.estado = SeatState::Comprado;
                                 seat_found = true;
                                 send_message_to_client(requester, clients, "Operación exitosa.\n");
                             } else {
@@ -229,7 +230,6 @@ fn process_seat_request(request: &str, requester: &str, clients: &ClientMap, est
         send_message_to_client(requester, clients, "Formato de comando incorrecto.\n");
     }
 }
-
 
 
 
