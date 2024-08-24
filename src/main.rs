@@ -20,9 +20,19 @@ struct Seat {
     estado: SeatState,
 }
 
+// Enum para las categorías de zona
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum CategoriaZona {
+    VIP,
+    Regular,
+    Sol,
+    Platea,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct Zone {
     nombre: String,
+    categoria: CategoriaZona,  // Nueva categoría para la zona
     asientos: Vec<Vec<Seat>>,  // Matriz de asientos
 }
 
@@ -39,50 +49,57 @@ struct Estadio {
 
 impl Estadio {
     fn new() -> Self {
+        // Definir las zonas con sus nombres y categorías correctos
         let zona_a = Zone {
-            nombre: String::from("Zona A"),
+            nombre: String::from("A"),  // Nombre de la zona
+            categoria: CategoriaZona::VIP,  // Categoría de la zona
             asientos: Self::crear_matriz_asientos(3, 5, vec![(0, 0, SeatState::Reservado), (1, 2, SeatState::Comprado)]),
         };
 
         let zona_b = Zone {
-            nombre: String::from("Zona B"),
+            nombre: String::from("B"),  // Nombre de la zona
+            categoria: CategoriaZona::Regular,  // Categoría de la zona
             asientos: Self::crear_matriz_asientos(7, 4, vec![(0, 1, SeatState::Libre), (6, 3, SeatState::Reservado)]),
         };
 
         let zona_c = Zone {
-            nombre: String::from("Zona C"),
+            nombre: String::from("C"),  // Nombre de la zona
+            categoria: CategoriaZona::Sol,  // Categoría de la zona
             asientos: Self::crear_matriz_asientos(5, 5, vec![(2, 2, SeatState::Comprado), (4, 4, SeatState::Libre)]),
         };
 
         let zona_d = Zone {
-            nombre: String::from("Zona D"),
+            nombre: String::from("D"),  // Nombre de la zona
+            categoria: CategoriaZona::Platea,  // Categoría de la zona
             asientos: Self::crear_matriz_asientos(6, 6, vec![(3, 3, SeatState::Libre), (5, 2, SeatState::Reservado)]),
         };
 
-        let categoria_a = Category {
-            nombre: String::from("Categoría A"),
-            zonas: vec![zona_a],
+        // Definir las categorías con los nombres correctos
+        let categoria_vip = Category {
+            nombre: String::from("VIP"),  // Nombre de la categoría
+            zonas: vec![zona_a],  // Lista de zonas de esta categoría
         };
 
-        let categoria_b = Category {
-            nombre: String::from("Categoría B"),
-            zonas: vec![zona_b],
+        let categoria_regular = Category {
+            nombre: String::from("Regular"),  // Nombre de la categoría
+            zonas: vec![zona_b],  // Lista de zonas de esta categoría
         };
 
-        let categoria_c = Category {
-            nombre: String::from("Categoría C"),
-            zonas: vec![zona_c],
+        let categoria_sol = Category {
+            nombre: String::from("Sol"),  // Nombre de la categoría
+            zonas: vec![zona_c],  // Lista de zonas de esta categoría
         };
 
-        let categoria_d = Category {
-            nombre: String::from("Categoría D"),
-            zonas: vec![zona_d],
+        let categoria_platea = Category {
+            nombre: String::from("Platea"),  // Nombre de la categoría
+            zonas: vec![zona_d],  // Lista de zonas de esta categoría
         };
 
         Estadio {
-            categorias: vec![categoria_a, categoria_b, categoria_c, categoria_d],
+            categorias: vec![categoria_vip, categoria_regular, categoria_sol, categoria_platea],
         }
     }
+
 
     // Crear una matriz de asientos para una zona específica
     fn crear_matriz_asientos(filas: usize, asientos_por_fila: usize, estados: Vec<(usize, usize, SeatState)>) -> Vec<Vec<Seat>> {
@@ -149,6 +166,20 @@ fn handle_client(mut stream: TcpStream, clients: ClientMap, estadio: Arc<Mutex<E
 
 
 fn process_seat_request(request: &str, requester: &str, clients: &ClientMap, estadio: &Arc<Mutex<Estadio>>, new_state: SeatState) {
+
+    println!("Categorías disponibles:");
+for cat in estadio.lock().unwrap().categorias.iter() {
+    println!("Categoría: {}", cat.nombre);
+    for zon in cat.zonas.iter() {
+        println!("  Zona: {}", zon.nombre);
+        for (i, fila) in zon.asientos.iter().enumerate() {
+            for (j, seat) in fila.iter().enumerate() {
+                println!("    Fila: {}, Asiento: {}, Estado: {:?}", i + 1, j + 1, seat.estado);
+            }
+        }
+    }
+}
+
     let re = Regex::new(r#"RESERVAR_ASIENTO\s+"([^"]+)"\s+"([^"]+)"\s+(\d+)\s+(\d+)"#).unwrap();
     let re_compra = Regex::new(r#"COMPRAR_ASIENTO\s+"([^"]+)"\s+"([^"]+)"\s+(\d+)\s+(\d+)"#).unwrap();
 
@@ -251,7 +282,8 @@ fn send_stadium_structure(requester: &str, clients: &ClientMap, estadio: &Arc<Mu
     for categoria in &estadio.categorias {
         stadium_structure.push_str(&format!("Categoría: {}\n", categoria.nombre));
         for zona in &categoria.zonas {
-            stadium_structure.push_str(&format!("  Zona: {}\n", zona.nombre));
+            // Mostrar el nombre de la zona junto con su categoría
+            stadium_structure.push_str(&format!("  Zona: {} ({:?})\n", zona.nombre, zona.categoria));
             stadium_structure.push_str("  Asientos:\n");
 
             for (fila_idx, fila) in zona.asientos.iter().enumerate() {
