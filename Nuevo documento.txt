@@ -1,0 +1,114 @@
+F2wc0nt4s3n3
+F4wc0nt4s4n4
+
+
+// Online Rust compiler to run Rust program online
+// Print "Try programiz.pro" message
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum SeatState {
+    Libre,
+    Reservado,
+    Comprado,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Seat {
+    estado: SeatState,
+}
+
+#[derive(Debug)]
+struct Zone {
+    nombre: String,
+    asientos: Vec<Vec<Seat>>,  // Matriz de asientos
+}
+
+#[derive(Debug)]
+struct Category {
+    nombre: String,
+    zonas: Vec<Zone>,
+}
+
+#[derive(Debug)]
+struct Estadio {
+    categorias: Vec<Category>,
+}
+
+impl Estadio {
+    fn new() -> Self {
+        let zona_a = Zone {
+            nombre: String::from("Zona A"),
+            asientos: Self::crear_matriz_asientos(3, 5, vec![(0, 0, SeatState::Reservado), (1, 2, SeatState::Comprado)]),
+        };
+
+        let zona_b = Zone {
+            nombre: String::from("Zona B"),
+            asientos: Self::crear_matriz_asientos(7, 4, vec![(0, 1, SeatState::Libre), (6, 3, SeatState::Reservado)]),
+        };
+
+        let zona_c = Zone {
+            nombre: String::from("Zona C"),
+            asientos: Self::crear_matriz_asientos(5, 5, vec![(2, 2, SeatState::Comprado), (4, 4, SeatState::Libre)]),
+        };
+
+        let zona_d = Zone {
+            nombre: String::from("Zona D"),
+            asientos: Self::crear_matriz_asientos(6, 6, vec![(3, 3, SeatState::Libre), (5, 2, SeatState::Reservado)]),
+        };
+
+        let categoria_a = Category {
+            nombre: String::from("Categoría A"),
+            zonas: vec![zona_a],
+        };
+
+        let categoria_b = Category {
+            nombre: String::from("Categoría B"),
+            zonas: vec![zona_b],
+        };
+
+        let categoria_c = Category {
+            nombre: String::from("Categoría C"),
+            zonas: vec![zona_c],
+        };
+
+        let categoria_d = Category {
+            nombre: String::from("Categoría D"),
+            zonas: vec![zona_d],
+        };
+
+        Estadio {
+            categorias: vec![categoria_a, categoria_b, categoria_c, categoria_d],
+        }
+    }
+
+    // Crear una matriz de asientos para una zona específica
+    fn crear_matriz_asientos(filas: usize, asientos_por_fila: usize, estados: Vec<(usize, usize, SeatState)>) -> Vec<Vec<Seat>> {
+        let mut matriz = vec![vec![Seat { estado: SeatState::Libre }; asientos_por_fila]; filas];
+
+        for (fila, numero, estado) in estados {
+            if fila < filas && numero < asientos_por_fila {
+                matriz[fila][numero].estado = estado;
+            }
+        }
+
+        matriz
+    }
+}
+
+fn main() {
+    let estadio = Estadio::new();
+
+    // Acceder a las categorías y zonas para evitar warnings
+    for categoria in &estadio.categorias {
+        println!("Categoria: {}", categoria.nombre);
+        for zona in &categoria.zonas {
+            println!("  Zona: {}", zona.nombre);
+            for fila in &zona.asientos {
+                for asiento in fila {
+                    print!("{:?} ", asiento.estado);
+                }
+                println!();
+            }
+        }
+    }
+}
+
