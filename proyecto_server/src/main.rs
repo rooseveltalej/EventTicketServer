@@ -59,19 +59,19 @@ impl Estadio {
         let zona_b = Zone {
             nombre: String::from("B"),  // Nombre de la zona
             categoria: CategoriaZona::Regular,  // Categoría de la zona
-            asientos: Self::crear_matriz_asientos(7, 4, vec![(0, 1, SeatState::Libre), (6, 3, SeatState::Reservado)]),
+            asientos: Self::crear_matriz_asientos(3, 5, vec![(0, 1, SeatState::Libre), (3, 3, SeatState::Reservado)]),
         };
 
         let zona_c = Zone {
             nombre: String::from("C"),  // Nombre de la zona
             categoria: CategoriaZona::Sol,  // Categoría de la zona
-            asientos: Self::crear_matriz_asientos(5, 5, vec![(2, 2, SeatState::Comprado), (4, 4, SeatState::Libre)]),
+            asientos: Self::crear_matriz_asientos(3, 5, vec![(2, 2, SeatState::Comprado), (4, 4, SeatState::Libre)]),
         };
 
         let zona_d = Zone {
             nombre: String::from("D"),  // Nombre de la zona
             categoria: CategoriaZona::Platea,  // Categoría de la zona
-            asientos: Self::crear_matriz_asientos(6, 6, vec![(3, 3, SeatState::Libre), (5, 2, SeatState::Reservado)]),
+            asientos: Self::crear_matriz_asientos(3, 5, vec![(3, 3, SeatState::Libre), (2, 2, SeatState::Reservado)]),
         };
 
         // Definir las categorías con los nombres correctos
@@ -99,7 +99,6 @@ impl Estadio {
             categorias: vec![categoria_vip, categoria_regular, categoria_sol, categoria_platea],
         }
     }
-
 
     // Crear una matriz de asientos para una zona específica
     fn crear_matriz_asientos(filas: usize, asientos_por_fila: usize, estados: Vec<(usize, usize, SeatState)>) -> Vec<Vec<Seat>> {
@@ -143,6 +142,8 @@ fn handle_client(mut stream: TcpStream, clients: ClientMap, estadio: Arc<Mutex<E
                     process_seat_request(trimmed_message, &address, &clients, &estadio, SeatState::Reservado);
                 } else if trimmed_message.starts_with("COMPRAR_ASIENTO") {
                     process_seat_request(trimmed_message, &address, &clients, &estadio, SeatState::Comprado);
+                } else if trimmed_message.starts_with("CHECK_ASIENTO") {
+                    check_seat_availability(trimmed_message, &address, &clients, &estadio);
                 } else {
                     let message = format!("{}: {}", address, buffer);
                     println!("Message received: {}", message);
@@ -162,24 +163,37 @@ fn handle_client(mut stream: TcpStream, clients: ClientMap, estadio: Arc<Mutex<E
     }
 }
 
+fn check_seat_availability(request: &str, requester: &str, clients: &ClientMap, estadio: &Arc<Mutex<Estadio>>) {
+    let re = Regex::new(r#"CHECK_ASIENTO\s+"([^"]+)"\s+"([^"]+)"\s+(\d+)\s+(\d+)"#).unwrap();
 
+    if let Some(caps) = re.captures(request) {
+        let categoria = caps[1].trim_matches('"');
+        let zona = caps[2].trim_matches('"');
+        let fila: usize = caps[3].parse().unwrap_or(0);
+        let asiento: usize = caps[4].parse().unwrap_or(0);
 
+        let estadio = estadio.lock().expect("Failed to lock estadio mutex");
 
-fn process_seat_request(request: &str, requester: &str, clients: &ClientMap, estadio: &Arc<Mutex<Estadio>>, new_state: SeatState) {
-
-    println!("Categorías disponibles:");
-for cat in estadio.lock().unwrap().categorias.iter() {
-    println!("Categoría: {}", cat.nombre);
-    for zon in cat.zonas.iter() {
-        println!("  Zona: {}", zon.nombre);
-        for (i, fila) in zon.asientos.iter().enumerate() {
-            for (j, seat) in fila.iter().enumerate() {
-                println!("    Fila: {}, Asiento: {}, Estado: {:?}", i + 1, j + 1, seat.estado);
+        for cat in estadio.categorias.iter() {
+            if cat.nombre == categoria {
+                for zon in cat.zonas.iter() {
+                    if zon.nombre == zona {
+                        if fila > 0 && fila <= zon.asientos.len() && asiento > 0 && asiento <= zon.asientos[0].len() {
+                            let current_seat = &zon.asientos[fila - 1][asiento - 1];
+                            if current_seat.estado == SeatState::Libre {
+                                send_message_to_client(requester, clients, "ASIENTO_DISPONIBLE true\n");
+                                return;
+                            }
+                        }
+                    }
+                }
             }
         }
     }
+    send_message_to_client(requester, clients, "ASIENTO_DISPONIBLE false\n");
 }
 
+fn process_seat_request(request: &str, requester: &str, clients: &ClientMap, estadio: &Arc<Mutex<Estadio>>, new_state: SeatState) {
     let re = Regex::new(r#"RESERVAR_ASIENTO\s+"([^"]+)"\s+"([^"]+)"\s+(\d+)\s+(\d+)"#).unwrap();
     let re_compra = Regex::new(r#"COMPRAR_ASIENTO\s+"([^"]+)"\s+"([^"]+)"\s+(\d+)\s+(\d+)"#).unwrap();
 
@@ -189,8 +203,6 @@ for cat in estadio.lock().unwrap().categorias.iter() {
         let zona = caps[2].trim_matches('"');
         let fila: usize = caps[3].parse().unwrap_or(0);
         let asiento: usize = caps[4].parse().unwrap_or(0);
-
-        println!("Procesando reserva: Categoría={}, Zona={}, Fila={}, Asiento={}", categoria, zona, fila, asiento);
 
         let mut estadio = estadio.lock().expect("Failed to lock estadio mutex");
 
@@ -203,7 +215,7 @@ for cat in estadio.lock().unwrap().categorias.iter() {
                         if fila > 0 && fila <= zon.asientos.len() && asiento > 0 && asiento <= zon.asientos[0].len() {
                             let current_seat = &mut zon.asientos[fila - 1][asiento - 1];
                             if current_seat.estado == SeatState::Libre {
-                                current_seat.estado = SeatState::ReservadoPorUsuario;
+                                current_seat.estado = SeatState::ReservadoPorUsuario;  // Cambiar a ReservadoPorUsuario
                                 seat_found = true;
                                 send_message_to_client(requester, clients, "Operación exitosa.\n");
                             } else {
@@ -227,8 +239,6 @@ for cat in estadio.lock().unwrap().categorias.iter() {
         let fila: usize = caps[3].parse().unwrap_or(0);
         let asiento: usize = caps[4].parse().unwrap_or(0);
 
-        println!("Procesando compra: Categoría={}, Zona={}, Fila={}, Asiento={}", categoria, zona, fila, asiento);
-
         let mut estadio = estadio.lock().expect("Failed to lock estadio mutex");
 
         let mut seat_found = false;
@@ -240,7 +250,7 @@ for cat in estadio.lock().unwrap().categorias.iter() {
                         if fila > 0 && fila <= zon.asientos.len() && asiento > 0 && asiento <= zon.asientos[0].len() {
                             let current_seat = &mut zon.asientos[fila - 1][asiento - 1];
                             if current_seat.estado == SeatState::ReservadoPorUsuario {
-                                current_seat.estado = SeatState::Comprado;
+                                current_seat.estado = new_state;
                                 seat_found = true;
                                 send_message_to_client(requester, clients, "Operación exitosa.\n");
                             } else {
@@ -263,7 +273,6 @@ for cat in estadio.lock().unwrap().categorias.iter() {
 }
 
 
-
 fn send_message_to_client(client_address: &str, clients: &ClientMap, message: &str) {
     if let Some(mut client) = clients.lock().unwrap().get(client_address) {
         if let Err(e) = client.write_all(message.as_bytes()) {
@@ -271,7 +280,6 @@ fn send_message_to_client(client_address: &str, clients: &ClientMap, message: &s
         }
     }
 }
-
 
 fn send_stadium_structure(requester: &str, clients: &ClientMap, estadio: &Arc<Mutex<Estadio>>) {
     // Bloquear el mutex para obtener acceso a los datos
