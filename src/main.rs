@@ -7,7 +7,7 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]  // Añadir PartialEq, Eq y Hash
 enum SeatState {
     Libre,
     Reservado,
@@ -21,7 +21,7 @@ struct Seat {
 }
 
 // Enum para las categorías de zona
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]  // Añadir PartialEq, Eq y Hash
 enum CategoriaZona {
     VIP,
     Regular,
@@ -32,19 +32,12 @@ enum CategoriaZona {
 #[derive(Debug, Serialize, Deserialize)]
 struct Zone {
     nombre: String,
-    categoria: CategoriaZona,  // Nueva categoría para la zona
-    asientos: Vec<Vec<Seat>>,  // Matriz de asientos
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct Category {
-    nombre: String,
-    zonas: Vec<Zone>,
+    categorias: HashMap<CategoriaZona, Vec<Vec<Seat>>>,  // Matrices de asientos por categoría
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Estadio {
-    categorias: Vec<Category>,
+    zonas: Vec<Zone>,
 }
 
 impl Estadio {
@@ -52,55 +45,40 @@ impl Estadio {
         // Definir las zonas con sus nombres y categorías correctos
         let zona_a = Zone {
             nombre: String::from("A"),  // Nombre de la zona
-            categoria: CategoriaZona::VIP,  // Categoría de la zona
-            asientos: Self::crear_matriz_asientos(3, 5, vec![(0, 0, SeatState::Reservado), (1, 2, SeatState::Comprado)]),
+            categorias: Self::crear_categorias(),
         };
 
         let zona_b = Zone {
             nombre: String::from("B"),  // Nombre de la zona
-            categoria: CategoriaZona::Regular,  // Categoría de la zona
-            asientos: Self::crear_matriz_asientos(3, 5, vec![(0, 1, SeatState::Libre), (3, 3, SeatState::Reservado)]),
+            categorias: Self::crear_categorias(),
         };
 
         let zona_c = Zone {
             nombre: String::from("C"),  // Nombre de la zona
-            categoria: CategoriaZona::Sol,  // Categoría de la zona
-            asientos: Self::crear_matriz_asientos(3, 5, vec![(2, 2, SeatState::Comprado), (4, 4, SeatState::Libre)]),
+            categorias: Self::crear_categorias(),
         };
 
         let zona_d = Zone {
             nombre: String::from("D"),  // Nombre de la zona
-            categoria: CategoriaZona::Platea,  // Categoría de la zona
-            asientos: Self::crear_matriz_asientos(3, 5, vec![(3, 3, SeatState::Libre), (2, 2, SeatState::Reservado)]),
-        };
-
-        // Definir las categorías con los nombres correctos
-        let categoria_vip = Category {
-            nombre: String::from("VIP"),  // Nombre de la categoría
-            zonas: vec![zona_a],  // Lista de zonas de esta categoría
-        };
-
-        let categoria_regular = Category {
-            nombre: String::from("Regular"),  // Nombre de la categoría
-            zonas: vec![zona_b],  // Lista de zonas de esta categoría
-        };
-
-        let categoria_sol = Category {
-            nombre: String::from("Sol"),  // Nombre de la categoría
-            zonas: vec![zona_c],  // Lista de zonas de esta categoría
-        };
-
-        let categoria_platea = Category {
-            nombre: String::from("Platea"),  // Nombre de la categoría
-            zonas: vec![zona_d],  // Lista de zonas de esta categoría
+            categorias: Self::crear_categorias(),
         };
 
         Estadio {
-            categorias: vec![categoria_vip, categoria_regular, categoria_sol, categoria_platea],
+            zonas: vec![zona_a, zona_b, zona_c, zona_d],
         }
     }
 
-    // Crear una matriz de asientos para una zona específica
+    // Crear las categorías con sus matrices de asientos
+    fn crear_categorias() -> HashMap<CategoriaZona, Vec<Vec<Seat>>> {
+        let mut categorias = HashMap::new();
+        categorias.insert(CategoriaZona::VIP, Self::crear_matriz_asientos(3, 5, vec![(0, 0, SeatState::Reservado), (1, 2, SeatState::Comprado)]));
+        categorias.insert(CategoriaZona::Regular, Self::crear_matriz_asientos(3, 5, vec![(0, 1, SeatState::Libre), (2, 3, SeatState::Reservado)]));
+        categorias.insert(CategoriaZona::Sol, Self::crear_matriz_asientos(3, 5, vec![(2, 2, SeatState::Comprado), (4, 4, SeatState::Libre)]));
+        categorias.insert(CategoriaZona::Platea, Self::crear_matriz_asientos(3, 5, vec![(3, 3, SeatState::Libre), (2, 2, SeatState::Reservado)]));
+        categorias
+    }
+
+    // Crear una matriz de asientos para una categoría específica
     fn crear_matriz_asientos(filas: usize, asientos_por_fila: usize, estados: Vec<(usize, usize, SeatState)>) -> Vec<Vec<Seat>> {
         let mut matriz = vec![vec![Seat { estado: SeatState::Libre }; asientos_por_fila]; filas];
 
@@ -174,16 +152,14 @@ fn check_seat_availability(request: &str, requester: &str, clients: &ClientMap, 
 
         let estadio = estadio.lock().expect("Failed to lock estadio mutex");
 
-        for cat in estadio.categorias.iter() {
-            if cat.nombre == categoria {
-                for zon in cat.zonas.iter() {
-                    if zon.nombre == zona {
-                        if fila > 0 && fila <= zon.asientos.len() && asiento > 0 && asiento <= zon.asientos[0].len() {
-                            let current_seat = &zon.asientos[fila - 1][asiento - 1];
-                            if current_seat.estado == SeatState::Libre {
-                                send_message_to_client(requester, clients, "ASIENTO_DISPONIBLE true\n");
-                                return;
-                            }
+        for zon in estadio.zonas.iter() {
+            if zon.nombre == zona {
+                if let Some(asientos) = zon.categorias.get(&CategoriaZona::VIP) {
+                    if fila > 0 && fila <= asientos.len() && asiento > 0 && asiento <= asientos[0].len() {
+                        let current_seat = &asientos[fila - 1][asiento - 1];
+                        if current_seat.estado == SeatState::Libre {
+                            send_message_to_client(requester, clients, "ASIENTO_DISPONIBLE true\n");
+                            return;
                         }
                     }
                 }
@@ -208,22 +184,20 @@ fn process_seat_request(request: &str, requester: &str, clients: &ClientMap, est
 
         let mut seat_found = false;
 
-        for cat in estadio.categorias.iter_mut() {
-            if cat.nombre == categoria {
-                for zon in cat.zonas.iter_mut() {
-                    if zon.nombre == zona {
-                        if fila > 0 && fila <= zon.asientos.len() && asiento > 0 && asiento <= zon.asientos[0].len() {
-                            let current_seat = &mut zon.asientos[fila - 1][asiento - 1];
-                            if current_seat.estado == SeatState::Libre {
-                                current_seat.estado = SeatState::ReservadoPorUsuario;  // Cambiar a ReservadoPorUsuario
-                                seat_found = true;
-                                send_message_to_client(requester, clients, "Operación exitosa.\n");
-                            } else {
-                                send_message_to_client(requester, clients, "El asiento no está disponible.\n");
-                            }
+        for zon in estadio.zonas.iter_mut() {
+            if zon.nombre == zona {
+                if let Some(asientos) = zon.categorias.get_mut(&CategoriaZona::VIP) {
+                    if fila > 0 && fila <= asientos.len() && asiento > 0 && asiento <= asientos[0].len() {
+                        let current_seat = &mut asientos[fila - 1][asiento - 1];
+                        if current_seat.estado == SeatState::Libre {
+                            current_seat.estado = SeatState::ReservadoPorUsuario;  // Cambiar a ReservadoPorUsuario
+                            seat_found = true;
+                            send_message_to_client(requester, clients, "Operación exitosa.\n");
                         } else {
-                            send_message_to_client(requester, clients, "Fila o asiento fuera de rango.\n");
+                            send_message_to_client(requester, clients, "El asiento no está disponible.\n");
                         }
+                    } else {
+                        send_message_to_client(requester, clients, "Fila o asiento fuera de rango.\n");
                     }
                 }
             }
@@ -243,22 +217,20 @@ fn process_seat_request(request: &str, requester: &str, clients: &ClientMap, est
 
         let mut seat_found = false;
 
-        for cat in estadio.categorias.iter_mut() {
-            if cat.nombre == categoria {
-                for zon in cat.zonas.iter_mut() {
-                    if zon.nombre == zona {
-                        if fila > 0 && fila <= zon.asientos.len() && asiento > 0 && asiento <= zon.asientos[0].len() {
-                            let current_seat = &mut zon.asientos[fila - 1][asiento - 1];
-                            if current_seat.estado == SeatState::ReservadoPorUsuario {
-                                current_seat.estado = new_state;
-                                seat_found = true;
-                                send_message_to_client(requester, clients, "Operación exitosa.\n");
-                            } else {
-                                send_message_to_client(requester, clients, "El asiento no está disponible para compra.\n");
-                            }
+        for zon in estadio.zonas.iter_mut() {
+            if zon.nombre == zona {
+                if let Some(asientos) = zon.categorias.get_mut(&CategoriaZona::VIP) {
+                    if fila > 0 && fila <= asientos.len() && asiento > 0 && asiento <= asientos[0].len() {
+                        let current_seat = &mut asientos[fila - 1][asiento - 1];
+                        if current_seat.estado == SeatState::ReservadoPorUsuario {
+                            current_seat.estado = new_state;
+                            seat_found = true;
+                            send_message_to_client(requester, clients, "Operación exitosa.\n");
                         } else {
-                            send_message_to_client(requester, clients, "Fila o asiento fuera de rango.\n");
+                            send_message_to_client(requester, clients, "El asiento no está disponible para compra.\n");
                         }
+                    } else {
+                        send_message_to_client(requester, clients, "Fila o asiento fuera de rango.\n");
                     }
                 }
             }
@@ -271,7 +243,6 @@ fn process_seat_request(request: &str, requester: &str, clients: &ClientMap, est
         send_message_to_client(requester, clients, "Formato de comando incorrecto.\n");
     }
 }
-
 
 fn send_message_to_client(client_address: &str, clients: &ClientMap, message: &str) {
     if let Some(mut client) = clients.lock().unwrap().get(client_address) {
@@ -287,14 +258,13 @@ fn send_stadium_structure(requester: &str, clients: &ClientMap, estadio: &Arc<Mu
 
     let mut stadium_structure = String::new();
 
-    for categoria in &estadio.categorias {
-        stadium_structure.push_str(&format!("Categoría: {}\n", categoria.nombre));
-        for zona in &categoria.zonas {
-            // Mostrar el nombre de la zona junto con su categoría
-            stadium_structure.push_str(&format!("  Zona: {} ({:?})\n", zona.nombre, zona.categoria));
+    for zona in &estadio.zonas {
+        stadium_structure.push_str(&format!("Zona: {}\n", zona.nombre));
+        for (categoria, asientos) in &zona.categorias {
+            stadium_structure.push_str(&format!("  Categoría: {:?}\n", categoria));
             stadium_structure.push_str("  Asientos:\n");
 
-            for (fila_idx, fila) in zona.asientos.iter().enumerate() {
+            for (fila_idx, fila) in asientos.iter().enumerate() {
                 let fila_str: Vec<String> = fila.iter().enumerate().map(|(col_idx, asiento)| {
                     format!("[{}, {}: {:?}]", fila_idx + 1, col_idx + 1, asiento.estado)
                 }).collect();
@@ -312,6 +282,7 @@ fn send_stadium_structure(requester: &str, clients: &ClientMap, estadio: &Arc<Mu
     }
 }
 
+
 fn broadcast_message(message: &str, clients: &ClientMap) {
     let clients = clients.lock().unwrap();
     for (_address, mut client) in clients.iter() {
@@ -320,6 +291,7 @@ fn broadcast_message(message: &str, clients: &ClientMap) {
         }
     }
 }
+
 
 fn main() {
     let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
