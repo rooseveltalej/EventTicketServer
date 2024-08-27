@@ -68,13 +68,13 @@ impl Estadio {
         }
     }
 
-    // Crear las categorías con sus matrices de asientos
+    // Crear las categorías con sus matrices de asientos para cada zona
     fn crear_categorias() -> HashMap<CategoriaZona, Vec<Vec<Seat>>> {
         let mut categorias = HashMap::new();
         categorias.insert(CategoriaZona::VIP, Self::crear_matriz_asientos(3, 5, vec![(0, 0, SeatState::Reservado), (1, 2, SeatState::Comprado)]));
-        categorias.insert(CategoriaZona::Regular, Self::crear_matriz_asientos(3, 5, vec![(0, 1, SeatState::Libre), (2, 3, SeatState::Reservado)]));
-        categorias.insert(CategoriaZona::Sol, Self::crear_matriz_asientos(3, 5, vec![(2, 2, SeatState::Comprado), (4, 4, SeatState::Libre)]));
-        categorias.insert(CategoriaZona::Platea, Self::crear_matriz_asientos(3, 5, vec![(3, 3, SeatState::Libre), (2, 2, SeatState::Reservado)]));
+        categorias.insert(CategoriaZona::Regular, Self::crear_matriz_asientos(7, 5, vec![(0, 1, SeatState::Libre), (2, 3, SeatState::Reservado)]));
+        categorias.insert(CategoriaZona::Sol, Self::crear_matriz_asientos(5, 5, vec![(2, 2, SeatState::Comprado), (4, 4, SeatState::Libre)]));
+        categorias.insert(CategoriaZona::Platea, Self::crear_matriz_asientos(6, 5, vec![(3, 3, SeatState::Libre), (2, 2, SeatState::Reservado)]));
         categorias
     }
 
