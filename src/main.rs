@@ -170,15 +170,14 @@ fn check_seat_availability(request: &str, requester: &str, clients: &ClientMap, 
 }
 
 fn process_seat_request(request: &str, requester: &str, clients: &ClientMap, estadio: &Arc<Mutex<Estadio>>, new_state: SeatState) {
-    let re = Regex::new(r#"RESERVAR_ASIENTO\s+"([^"]+)"\s+"([^"]+)"\s+(\d+)\s+(\d+)"#).unwrap();
-    let re_compra = Regex::new(r#"COMPRAR_ASIENTO\s+"([^"]+)"\s+"([^"]+)"\s+(\d+)\s+(\d+)"#).unwrap();
+    let re = Regex::new(r#"(RESERVAR|COMPRAR|LIBERAR)_ASIENTO\s+"([^"]+)"\s+"([^"]+)"\s+(\d+)\s+(\d+)"#).unwrap();
 
     if let Some(caps) = re.captures(request) {
-        // Procesar reserva de asiento
-        let categoria = caps[1].trim_matches('"');
-        let zona = caps[2].trim_matches('"');
-        let fila: usize = caps[3].parse().unwrap_or(0);
-        let asiento: usize = caps[4].parse().unwrap_or(0);
+        let action = &caps[1];
+        let categoria = caps[2].trim_matches('"');
+        let zona = caps[3].trim_matches('"');
+        let fila: usize = caps[4].parse().unwrap_or(0);
+        let asiento: usize = caps[5].parse().unwrap_or(0);
 
         let mut estadio = estadio.lock().expect("Failed to lock estadio mutex");
 
@@ -189,49 +188,42 @@ fn process_seat_request(request: &str, requester: &str, clients: &ClientMap, est
                 if let Some(asientos) = zon.categorias.get_mut(&CategoriaZona::VIP) {
                     if fila > 0 && fila <= asientos.len() && asiento > 0 && asiento <= asientos[0].len() {
                         let current_seat = &mut asientos[fila - 1][asiento - 1];
-                        if current_seat.estado == SeatState::Libre {
-                            current_seat.estado = SeatState::ReservadoPorUsuario;  // Cambiar a ReservadoPorUsuario
-                            seat_found = true;
-                            send_message_to_client(requester, clients, "Operación exitosa.\n");
-                        } else {
-                            send_message_to_client(requester, clients, "El asiento no está disponible.\n");
+                        match action {
+                            "RESERVAR" => {
+                                if current_seat.estado == SeatState::Libre {
+                                    current_seat.estado = SeatState::ReservadoPorUsuario;
+                                    seat_found = true;
+                                    send_message_to_client(requester, clients, "Asiento reservado con éxito.\n");
+                                } else {
+                                    send_message_to_client(requester, clients, "El asiento no está disponible para reserva.\n");
+                                }
+                            },
+                            "COMPRAR" => {
+                                if current_seat.estado == SeatState::ReservadoPorUsuario {
+                                    current_seat.estado = SeatState::Comprado;
+                                    seat_found = true;
+                                    send_message_to_client(requester, clients, "Asiento comprado con éxito.\n");
+                                } else {
+                                    send_message_to_client(requester, clients, "El asiento no está disponible para compra.\n");
+                                }
+                            },
+                            "LIBERAR" => {
+                                if current_seat.estado == SeatState::ReservadoPorUsuario {
+                                    current_seat.estado = SeatState::Libre;
+                                    seat_found = true;
+                                    send_message_to_client(requester, clients, "Asiento liberado con éxito.\n");
+                                } else {
+                                    send_message_to_client(requester, clients, "El asiento no puede ser liberado.\n");
+                                }
+                            },
+                            _ => {
+                                send_message_to_client(requester, clients, "Acción no reconocida.\n");
+                            }
                         }
                     } else {
                         send_message_to_client(requester, clients, "Fila o asiento fuera de rango.\n");
                     }
-                }
-            }
-        }
-
-        if !seat_found {
-            send_message_to_client(requester, clients, "Asiento no encontrado o no disponible.\n");
-        }
-    } else if let Some(caps) = re_compra.captures(request) {
-        // Procesar compra de asiento
-        let categoria = caps[1].trim_matches('"');
-        let zona = caps[2].trim_matches('"');
-        let fila: usize = caps[3].parse().unwrap_or(0);
-        let asiento: usize = caps[4].parse().unwrap_or(0);
-
-        let mut estadio = estadio.lock().expect("Failed to lock estadio mutex");
-
-        let mut seat_found = false;
-
-        for zon in estadio.zonas.iter_mut() {
-            if zon.nombre == zona {
-                if let Some(asientos) = zon.categorias.get_mut(&CategoriaZona::VIP) {
-                    if fila > 0 && fila <= asientos.len() && asiento > 0 && asiento <= asientos[0].len() {
-                        let current_seat = &mut asientos[fila - 1][asiento - 1];
-                        if current_seat.estado == SeatState::ReservadoPorUsuario {
-                            current_seat.estado = new_state;
-                            seat_found = true;
-                            send_message_to_client(requester, clients, "Operación exitosa.\n");
-                        } else {
-                            send_message_to_client(requester, clients, "El asiento no está disponible para compra.\n");
-                        }
-                    } else {
-                        send_message_to_client(requester, clients, "Fila o asiento fuera de rango.\n");
-                    }
+                    break;
                 }
             }
         }
