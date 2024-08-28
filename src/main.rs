@@ -7,7 +7,7 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]  // Añadir PartialEq, Eq y Hash
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 enum SeatState {
     Libre,
     Reservado,
@@ -20,8 +20,7 @@ struct Seat {
     estado: SeatState,
 }
 
-// Enum para las categorías de zona
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]  // Añadir PartialEq, Eq y Hash
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 enum CategoriaZona {
     VIP,
     Regular,
@@ -32,7 +31,7 @@ enum CategoriaZona {
 #[derive(Debug, Serialize, Deserialize)]
 struct Zone {
     nombre: String,
-    categorias: HashMap<CategoriaZona, Vec<Vec<Seat>>>,  // Matrices de asientos por categoría
+    categorias: HashMap<CategoriaZona, Vec<Vec<Seat>>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -42,24 +41,23 @@ struct Estadio {
 
 impl Estadio {
     fn new() -> Self {
-        // Definir las zonas con sus nombres y categorías correctos
         let zona_a = Zone {
-            nombre: String::from("A"),  // Nombre de la zona
+            nombre: String::from("A"),
             categorias: Self::crear_categorias(),
         };
 
         let zona_b = Zone {
-            nombre: String::from("B"),  // Nombre de la zona
+            nombre: String::from("B"),
             categorias: Self::crear_categorias(),
         };
 
         let zona_c = Zone {
-            nombre: String::from("C"),  // Nombre de la zona
+            nombre: String::from("C"),
             categorias: Self::crear_categorias(),
         };
 
         let zona_d = Zone {
-            nombre: String::from("D"),  // Nombre de la zona
+            nombre: String::from("D"),
             categorias: Self::crear_categorias(),
         };
 
@@ -68,7 +66,6 @@ impl Estadio {
         }
     }
 
-    // Crear las categorías con sus matrices de asientos para cada zona
     fn crear_categorias() -> HashMap<CategoriaZona, Vec<Vec<Seat>>> {
         let mut categorias = HashMap::new();
         categorias.insert(CategoriaZona::VIP, Self::crear_matriz_asientos(3, 5, vec![(0, 0, SeatState::Reservado), (1, 2, SeatState::Comprado)]));
@@ -78,7 +75,6 @@ impl Estadio {
         categorias
     }
 
-    // Crear una matriz de asientos para una categoría específica
     fn crear_matriz_asientos(filas: usize, asientos_por_fila: usize, estados: Vec<(usize, usize, SeatState)>) -> Vec<Vec<Seat>> {
         let mut matriz = vec![vec![Seat { estado: SeatState::Libre }; asientos_por_fila]; filas];
 
@@ -93,6 +89,20 @@ impl Estadio {
 }
 
 type ClientMap = Arc<Mutex<HashMap<String, TcpStream>>>;
+
+fn liberar_asientos_reservados_por_usuario(estadio: &mut Estadio, usuario: &str) {
+    for zona in &mut estadio.zonas {
+        for asientos in zona.categorias.values_mut() {
+            for fila in asientos.iter_mut() {
+                for asiento in fila.iter_mut() {
+                    if asiento.estado == SeatState::ReservadoPorUsuario {
+                        asiento.estado = SeatState::Libre;
+                    }
+                }
+            }
+        }
+    }
+}
 
 fn handle_client(mut stream: TcpStream, clients: ClientMap, estadio: Arc<Mutex<Estadio>>) {
     let address = stream.peer_addr().unwrap().to_string();
@@ -113,7 +123,7 @@ fn handle_client(mut stream: TcpStream, clients: ClientMap, estadio: Arc<Mutex<E
         match reader.read_line(&mut buffer) {
             Ok(bytes_read) if bytes_read > 0 => {
                 let trimmed_message = buffer.trim();
-                println!("Received message from {}: {}", address, trimmed_message);  // Agregado para depuración
+                println!("Received message from {}: {}", address, trimmed_message);
                 if trimmed_message == "GET_STADIUM_STRUCTURE" {
                     send_stadium_structure(&address, &clients, &estadio);
                 } else if trimmed_message.starts_with("RESERVAR_ASIENTO") {
@@ -131,6 +141,10 @@ fn handle_client(mut stream: TcpStream, clients: ClientMap, estadio: Arc<Mutex<E
             Ok(_) => {
                 println!("Client {} disconnected", address);
                 clients.lock().unwrap().remove(&address);
+                {
+                    let mut estadio = estadio.lock().unwrap();
+                    liberar_asientos_reservados_por_usuario(&mut estadio, &address);
+                }
                 break;
             }
             Err(e) => {
@@ -173,7 +187,7 @@ fn process_seat_request(request: &str, requester: &str, clients: &ClientMap, est
     let re = Regex::new(r#"(RESERVAR|COMPRAR|LIBERAR)_ASIENTO\s+"([^"]+)"\s+"([^"]+)"\s+(\d+)\s+(\d+)"#).unwrap();
 
     if let Some(caps) = re.captures(request) {
-        let action = &caps[1];
+        let action = caps[1].to_string();
         let categoria = caps[2].trim_matches('"');
         let zona = caps[3].trim_matches('"');
         let fila: usize = caps[4].parse().unwrap_or(0);
@@ -188,7 +202,7 @@ fn process_seat_request(request: &str, requester: &str, clients: &ClientMap, est
                 if let Some(asientos) = zon.categorias.get_mut(&CategoriaZona::VIP) {
                     if fila > 0 && fila <= asientos.len() && asiento > 0 && asiento <= asientos[0].len() {
                         let current_seat = &mut asientos[fila - 1][asiento - 1];
-                        match action {
+                        match action.as_str() {
                             "RESERVAR" => {
                                 if current_seat.estado == SeatState::Libre {
                                     current_seat.estado = SeatState::ReservadoPorUsuario;
